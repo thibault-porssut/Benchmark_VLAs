@@ -18,7 +18,7 @@ USE_SMOLVLA = False  # For testing purposes, set to True to use SmolVLA
 class DummyVLA(torch.nn.Module):
     def forward(self, obs):
         # Retourne une action constante ou aléatoire (ex: 7DOF + gripper)
-        return np.random.uniform(-1, 1, size=(8,)).tolist()
+        return np.random.uniform(-1, 1, size=(7,)).tolist()
 
 if USE_SMOLVLA:
     from lerobot.models import load_smolvla
@@ -47,14 +47,19 @@ def decode_image(b64_img):
 async def predict(obs: ObsInput):
     try:
         # 1. Traitement des entrées
+        print("Received observation:", obs)
         images_tensor = torch.stack([decode_image(obs.images[key]) for key in sorted(obs.images.keys())])
         state_tensor = torch.tensor(obs.state).float()
+        print("BOM1")
+
 
         # 2. Appel modèle
         if USE_SMOLVLA:
             action = model(obs.instruction, images_tensor, state_tensor)
         else:
             action = model({"instruction": obs.instruction, "state": obs.state, "images": obs.images})
+            print("BOM1")
+
 
         # 3. Renvoi
         return {"action": action}
