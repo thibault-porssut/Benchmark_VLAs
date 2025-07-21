@@ -23,15 +23,16 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate smolvla
 export PYTHONPATH=$PYTHONPATH:/home/ids/ext-5219/Benchmark_VLAs
 # Execute the Python script with specific arguments
-srun python ~/Benchmark_VLAs/lerobot/lerobot/scripts/train.py \
+srun python ~/Benchmark_VLAs/lerobot/src/lerobot/scripts/train.py \
   --policy.path=lerobot/smolvla_base \
   --dataset.repo_id=lerobot/svla_so101_pickplace \
   --batch_size=64 \
   --steps=20000 \
   --output_dir=outputs/train/my_smolvla \
   --job_name=my_smolvla_training \
-  --policy.device=cuda 
-  # --wandb.enable=true
+  --policy.device=cuda \
+  --wandb.enable=true \
+  --policy.push_to_hub=false
 
 
 # Print job completion time

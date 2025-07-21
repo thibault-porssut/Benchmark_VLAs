@@ -1,68 +1,102 @@
-# Serveur FastAPI pour tester un VLA (dummy ou SmolVLA) avec LIBERO
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 import torch
-import uvicorn
 import numpy as np
 import base64
 import io
 from PIL import Image
 import os
+import logging
+logger = logging.getLogger("uvicorn")
 
-# USE_SMOLVLA = os.getenv("USE_SMOLVLA", "false").lower() == "true"
-USE_SMOLVLA = False  # For testing purposes, set to True to use SmolVLA
+# Lire depuis les variables d'environnement, ou par défaut mettre à False
+USE_SMOLVLA = os.getenv("USE_SMOLVLA", "false").lower() == "true"
 
-# ---------- 1. MODELES ----------
+
+# Initialisation du serveur
+app = FastAPI()
+model = None  # sera défini au startup
+
+# ---------- Dummy model ----------
 
 class DummyVLA(torch.nn.Module):
     def forward(self, obs):
-        # Retourne une action constante ou aléatoire (ex: 7DOF + gripper)
         return np.random.uniform(-1, 1, size=(7,)).tolist()
 
-if USE_SMOLVLA:
-    from lerobot.models import load_smolvla
-    model = load_smolvla("0.45B")
-    model.eval()
-else:
-    model = DummyVLA()
+    def select_action(self, batch):
+        return self.forward(batch)  # compatible avec la logique SmolVLA
 
-# ---------- 2. API ----------
-
-app = FastAPI()
+# ---------- Input model ----------
 
 class ObsInput(BaseModel):
-    state: list  # états proprioceptifs (ex: joint positions)
-    images: dict  # clé = nom caméra, valeur = image encodée base64
-    instruction: str  # phrase en langage naturel
+    state: list  # ex: positions des joints
+    images: dict  # clé = nom caméra, valeur = image base64
+    instruction: str  # ex: "pick up the red block"
 
+# ---------- Image decoder ----------
 
 def decode_image(b64_img):
     im_bytes = base64.b64decode(b64_img.encode('utf-8'))
     img = Image.open(io.BytesIO(im_bytes)).convert("RGB")
     return torch.tensor(np.array(img)).permute(2, 0, 1).float() / 255.0
 
+# ---------- Chargement du modèle ----------
+
+@app.on_event("startup")
+async def load_model():
+    global model
+    if USE_SMOLVLA:
+        logger.info("🔧 Chargement du modèle SmolVLA...")
+        from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+        model = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
+        logger.info("✅ SmolVLA chargé avec succès.")
+    else:
+        logger.info("⚙️ Utilisation du DummyVLA")
+        model = DummyVLA()
+
+# ---------- Routes API ----------
 
 @app.post("/predict")
 async def predict(obs: ObsInput):
     try:
-        # 1. Traitement des entrées
-        print("Received observation:", obs)
+        if model is None:
+            raise RuntimeError("Modèle non initialisé")
+
         images_tensor = torch.stack([decode_image(obs.images[key]) for key in sorted(obs.images.keys())])
         state_tensor = torch.tensor(obs.state).float()
-        print("BOM1")
 
-
-        # 2. Appel modèle
         if USE_SMOLVLA:
-            action = model(obs.instruction, images_tensor, state_tensor)
+            from lerobot.constants import OBS_STATE
+            batch = {
+                OBS_STATE: state_tensor,
+                "task": obs.instruction,
+                "camera_front": images_tensor,
+            }
+        
+           
+            logger.info("HERE")
+            
+            action = model.select_action(batch)
+            logger.info("HERE2")
+
         else:
-            action = model({"instruction": obs.instruction, "state": obs.state, "images": obs.images})
-            print("BOM1")
+            batch = {
+                "instruction": obs.instruction,
+                "state": obs.state,
+                "images": obs.images,
+            }
+            action = model.select_action(batch)
 
-
-        # 3. Renvoi
-        return {"action": action}
+        return {"action": action.tolist() if isinstance(action, torch.Tensor) else action}
 
     except Exception as e:
+        logger.info("❌ Erreur :", str(e))
         return {"error": str(e)}
+
+@app.get("/status")
+async def status():
+    return {
+        "model_loaded": model is not None,
+        "model_type": type(model).__name__ if model else "None",
+        "use_smolvla": USE_SMOLVLA,
+    }
