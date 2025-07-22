@@ -3,7 +3,7 @@
 #SBATCH --output=%x_%j.out            # Output file (%x for job name, %j for job ID)
 #SBATCH --error=%x_%j.err             # Error file
 #SBATCH --partition=A100              # Partition to submit to (A100, V100, etc.)
-#SBATCH --gres=gpu:2                  # Request 1 GPU
+#SBATCH --gres=gpu:1                 # Request 1 GPU
 #SBATCH --mem=32G                     # Request 32 GB of memory
 #SBATCH --time=24:00:00               # Time limit for the job (hh:mm:ss)
 
