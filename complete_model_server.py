@@ -401,8 +401,13 @@ async def predict(obs: ObsInput):
             action = model.select_action(batch)
             # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
             action = normalize_gripper_action(action, binarize=True)
-
-        return {"action": action.tolist() if isinstance(action, torch.Tensor) else action}
+        logger.info("PLOPFINAL")
+        print(repr(action))
+        return {
+            "action": action.tolist()
+            if isinstance(action, (torch.Tensor, np.ndarray))
+            else action
+        }
 
     except Exception as e:
         logger.info("❌ Erreur :",str(e))
