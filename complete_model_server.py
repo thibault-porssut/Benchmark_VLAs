@@ -57,7 +57,9 @@ async def load_model():
     if USE_SMOLVLA:
         logger.info("🔧 Chargement du modèle SmolVLA...")
         from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
-        model = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
+        # model = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base")
+        model = SmolVLAPolicy.from_pretrained("/home/ids/ext-5219/Benchmark_VLAs/outputs/train/my_smolvla/checkpoints/last/pretrained_model").to("cuda:0")
+
         logger.info("✅ SmolVLA chargé avec succès.")
     elif USE_OPENVLA:
         logger.info("🔧 Chargement du modèle OpenVLA...")
@@ -217,21 +219,61 @@ async def predict(obs: ObsInput):
         images_decoded= np.stack([decode_image(obs.images[key]) for key in sorted(obs.images.keys())]).squeeze()
 
         if USE_SMOLVLA:
-            from lerobot.constants import OBS_STATE
-            images_tensor = torch.stack([decode_image_to_tensor(obs.images[key]) for key in sorted(obs.images.keys())])
+            from lerobot.constants import ACTION, OBS_ENV_STATE, OBS_IMAGE, OBS_IMAGES, OBS_STATE
+            from scipy.spatial.transform import Rotation as R
+            print(obs.images.keys())
+            DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+            images_tensor = torch.stack([decode_image_to_tensor(obs.images[key]) for key in sorted(obs.images.keys())]).to(DEVICE)
+            images_tensor_unsqueezed = images_tensor.unsqueeze(0) # (B=1, T, C, H, W)
+            
+            # images= {
+            #     "up": images_tensor,   # (C, T, H, W)
+            #     # "up": [],
+            #     "side": []
+            # }
+            
+            
             state_tensor = torch.tensor(obs.state).float()
+
+
+            # Assume 'libero_state' is your 8-dimensional state vector from the environment
+            # [x, y, z, qx, qy, qz, qw, gripper_state]
+            libero_state = np.array(state_tensor) 
+
+            # 1. Isolate position and quaternion
+            position = libero_state[:3]
+            quaternion = libero_state[3:7] # [qx, qy, qz, qw]
+
+            # 2. Convert quaternion to Euler angles (roll, pitch, yaw)
+            # The 'xyz' sequence can be adjusted if the model expects a different order
+            # For many robotics applications, 'xyz' (roll, pitch, yaw) or 'zyx' are common
+            rotation = R.from_quat(quaternion)
+            euler_angles = rotation.as_euler('xyz', degrees=False) # Get angles in radians
+
+            # 3. Combine to create the final 6-DoF state vector
+            required_6d_state = np.concatenate([position, euler_angles])
+
+            # 4. Convert the final numpy array to a PyTorch tensor 
+            state_tensor_reduced = torch.tensor(required_6d_state).float().unsqueeze(0).unsqueeze(0).to(DEVICE)
+
+            print(f"Final 6-DoF state: {required_6d_state}")
+
+
             batch = {
-                OBS_STATE: state_tensor,
+                OBS_STATE: state_tensor_reduced,
                 "task": obs.instruction,
-                "camera_front": images_tensor,
+                # OBS_IMAGE: images,
+                "observation.images.up": images_tensor_unsqueezed   # (B=1, T, C, H, W)
+                # "observation.images.side": torch.stack(images_side, dim=1)
             }
-        
+            
+            print(batch[OBS_STATE].shape)
            
             logger.info("HERE")
             
             action = model.select_action(batch)
             # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
-            action = normalize_gripper_action(action, binarize=True)
+            # action = normalize_gripper_action(action, binarize=True)
             logger.info("HERE2")
         elif USE_OPENVLA:
             import tensorflow as tf
