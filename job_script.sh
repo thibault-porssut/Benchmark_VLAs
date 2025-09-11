@@ -2,7 +2,7 @@
 #SBATCH --job-name=smolvla_training             # Name of your job
 #SBATCH --output=%x_%j.out            # Output file (%x for job name, %j for job ID)
 #SBATCH --error=%x_%j.err             # Error file
-#SBATCH --partition=A100              # Partition to submit to (A100, V100, etc.)
+#SBATCH --partition=A40              # Partition to submit to (A100, V100, etc.)
 #SBATCH --gres=gpu:1                 # Request 1 GPU
 #SBATCH --mem=32G                     # Request 32 GB of memory
 #SBATCH --time=24:00:00               # Time limit for the job (hh:mm:ss)
@@ -24,15 +24,12 @@ conda activate smolvla
 export PYTHONPATH=$PYTHONPATH:/home/ids/ext-5219/Benchmark_VLAs
 # Execute the Python script with specific arguments
 srun python ~/Benchmark_VLAs/lerobot/src/lerobot/scripts/train.py \
-  --policy.path=lerobot/smolvla_base \
-  --dataset.repo_id=lerobot/svla_so101_pickplace \
-  --batch_size=64 \
-  --steps=20000 \
-  --output_dir=outputs/train/my_smolvla \
-  --job_name=my_smolvla_training \
-  --policy.device=cuda \
-  --wandb.enable=true \
-  --policy.push_to_hub=false
+  --config_path=outputs/train/my_smolvla_libero_H100/checkpoints/last/pretrained_model/train_config.json \
+  --resume=true \
+  --job_name=my_smolvla_training_resume_final \
+  --wandb.enable=true
+
+
 
 
 # Print job completion time

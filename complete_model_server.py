@@ -135,16 +135,19 @@ async def load_model():
             # Model-specific parameters
             #################################################################################################################
             model_family: str = "openvla"                    # Model family
-            pretrained_checkpoint: Union[str, Path] = "openvla/openvla-7b-finetuned-libero-spatial"     # Pretrained checkpoint path
+            # pretrained_checkpoint: Union[str, Path] = "openvla/openvla-7b-finetuned-libero-10"
+            pretrained_checkpoint: Union[str, Path] = "openvla/openvla-7b"     # Pretrained checkpoint path
+                 # Pretrained checkpoint path
             load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
             load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization
 
-            center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
+            center_crop: bool = False                         # Center crop? (if trained w/ random crop image aug)
 
             #################################################################################################################
             # LIBERO environment-specific parameters
             #################################################################################################################
-            task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
+            # task_suite_name: str = "libero_10"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
+            task_suite_name: str = "bridge_orig"         
             num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
             num_trials_per_task: int = 50                    # Number of rollouts per task
 
@@ -213,11 +216,15 @@ async def load_model():
 @app.post("/predict")
 async def predict(obs: ObsInput):
     try:
+        print("Received")
+        print(obs)
         if model is None:
             raise RuntimeError("Modèle non initialisé")
+      
+        # images_decoded= np.stack([decode_image(obs.images[key]) for key in sorted(obs.images.keys())]).squeeze()
 
-        images_decoded= np.stack([decode_image(obs.images[key]) for key in sorted(obs.images.keys())]).squeeze()
-
+        images_decoded = [decode_image(obs.images[key]) for key in sorted(obs.images.keys())]       
+        
         if USE_SMOLVLA:
             from lerobot.constants import ACTION, OBS_ENV_STATE, OBS_IMAGE, OBS_IMAGES, OBS_STATE
             from scipy.spatial.transform import Rotation as R
@@ -233,34 +240,73 @@ async def predict(obs: ObsInput):
             # }
             
             
-            state_tensor = torch.tensor(obs.state).float()
+            # state_tensor = torch.tensor(obs.state).float()
 
 
-            # Assume 'libero_state' is your 8-dimensional state vector from the environment
-            # [x, y, z, qx, qy, qz, qw, gripper_state]
-            libero_state = np.array(state_tensor) 
+            # # Assume 'libero_state' is your 8-dimensional state vector from the environment
+            # # [x, y, z, qx, qy, qz, qw, gripper_state]
+            # libero_state = np.array(state_tensor) 
 
-            # 1. Isolate position and quaternion
-            position = libero_state[:3]
-            quaternion = libero_state[3:7] # [qx, qy, qz, qw]
+            # # 1. Isolate position and quaternion
+            # position = libero_state[:3]
+            # quaternion = libero_state[3:7] # [qx, qy, qz, qw]
 
-            # 2. Convert quaternion to Euler angles (roll, pitch, yaw)
-            # The 'xyz' sequence can be adjusted if the model expects a different order
-            # For many robotics applications, 'xyz' (roll, pitch, yaw) or 'zyx' are common
-            rotation = R.from_quat(quaternion)
-            euler_angles = rotation.as_euler('xyz', degrees=False) # Get angles in radians
+            # # 2. Convert quaternion to Euler angles (roll, pitch, yaw)
+            # # The 'xyz' sequence can be adjusted if the model expects a different order
+            # # For many robotics applications, 'xyz' (roll, pitch, yaw) or 'zyx' are common
+            # rotation = R.from_quat(quaternion)
+            # euler_angles = rotation.as_euler('xyz', degrees=False) # Get angles in radians
 
-            # 3. Combine to create the final 6-DoF state vector
-            required_6d_state = np.concatenate([position, euler_angles])
+            # # 3. Combine to create the final 6-DoF state vector
+            # required_6d_state = np.concatenate([position, euler_angles])
 
-            # 4. Convert the final numpy array to a PyTorch tensor 
-            state_tensor_reduced = torch.tensor(required_6d_state).float().unsqueeze(0).unsqueeze(0).to(DEVICE)
+            # # 4. Convert the final numpy array to a PyTorch tensor 
+            # state_tensor_reduced = torch.tensor(required_6d_state).float().unsqueeze(0).unsqueeze(0).to(DEVICE)
 
-            print(f"Final 6-DoF state: {required_6d_state}")
+            # print(f"Final 6-DoF state: {required_6d_state}")
+
+       
+            from scipy.spatial.transform import Rotation as R
+
+            def convert_libero_obs_to_smolvla_input(libero_state_8d: np.ndarray) -> torch.Tensor:
+                """
+                Converts an 8-DoF state from LIBERO to the 7-DoF state tensor required by smolvla.
+
+                Args:
+                    libero_state_8d: An 8D numpy array from LIBERO's environment
+                                    [x, y, z, qx, qy, qz, qw, gripper_state].
+
+                Returns:
+                    A 7D torch.Tensor for the smolvla model
+                    [x, y, z, roll, pitch, yaw, gripper_state].
+                """
+                # 1. Extract the 3D position, 4D quaternion, and 1D gripper state
+                position = libero_state_8d[:3]
+                quaternion = libero_state_8d[3:7]
+                gripper_state = libero_state_8d[7]
+
+                # 2. Convert the quaternion to Euler angles (roll, pitch, yaw)
+                rotation = R.from_quat(quaternion)
+                euler_angles = rotation.as_euler('xyz', degrees=False)  # angles in radians
+
+                # 3. Concatenate all parts into a 7D numpy array
+                smolvla_state_7d_np = np.concatenate([position, euler_angles, [gripper_state]])
+
+                # 4. Convert the final numpy array to a PyTorch float tensor
+                smolvla_state_tensor = torch.tensor(smolvla_state_7d_np).float()
+
+                return smolvla_state_tensor
+
+            # Convert it to the correct 7D format smolvla requires
+            smolvla_input_tensor = convert_libero_obs_to_smolvla_input(obs.state)
+
+            # print(f"Original LIBERO state shape: {obs.state.shape}")
+            # print(f"Corrected smolvla input shape: {smolvla_input_tensor.shape}")
+            # print(f"Final 7D tensor for model: {smolvla_input_tensor}")
 
 
             batch = {
-                OBS_STATE: state_tensor_reduced,
+                OBS_STATE: smolvla_input_tensor,
                 "task": obs.instruction,
                 # OBS_IMAGE: images,
                 "observation.images.up": images_tensor_unsqueezed   # (B=1, T, C, H, W)
@@ -341,8 +387,9 @@ async def predict(obs: ObsInput):
                 return action
             def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False):
                 """Generates an action with the VLA policy."""
-                image = Image.fromarray(obs["full_image"])
-                image = image.convert("RGB")
+                # image = Image.fromarray(obs["full_image"])
+                # image = image.convert("RGB")
+                images=obs["full_image"]
 
                 # (If trained with image augmentations) Center crop image and then resize back up to original size.
                 # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), multiply
@@ -368,19 +415,24 @@ async def predict(obs: ObsInput):
                     # Convert back to PIL Image
                     image = Image.fromarray(image.numpy())
                     image = image.convert("RGB")
+                    image_to_save = tf.image.convert_image_dtype(image, tf.uint8, saturate=True)
+                    pil_img = Image.fromarray(image_to_save.numpy())
+                    pil_img.save("debug_cropped_view.png")
 
                 # Build VLA prompt
                 if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
-                    prompt = (
+                    prompt_text = (
                         f"{OPENVLA_V01_SYSTEM_PROMPT} USER: What action should the robot take to {task_label.lower()}? ASSISTANT:"
                     )
                 else:  # OpenVLA
-                    prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+                    prompt_text = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
 
+                # prompts=[prompt_text]*len(images)
+                prompts=prompt_text
                 # Process inputs.
-                inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
+                # inputs = processor(prompt, images).to(DEVICE, dtype=torch.bfloat16)
+                inputs = processor(text=prompts,images=images,return_tensors="pt").to(DEVICE, dtype=torch.bfloat16)
 
-                # Get action.
                 action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
                 return action
             def normalize_gripper_action(action, binarize=True):

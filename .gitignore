@@ -174,3 +174,8 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+*.err
+*.out
+.err
+.out
+
