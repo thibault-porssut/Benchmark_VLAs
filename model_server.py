@@ -135,7 +135,7 @@ async def load_model():
             # Model-specific parameters
             #################################################################################################################
             model_family: str = "openvla"                    # Model family
-            # pretrained_checkpoint: Union[str, Path] = "openvla/openvla-7b-finetuned-libero-10"
+            # pretrained_checkpoint: Union[str, Path] = "openvla/openvla-7b-finetuned-libero-spatial"
             pretrained_checkpoint: Union[str, Path] = "openvla/openvla-7b"     # Pretrained checkpoint path
                  # Pretrained checkpoint path
             load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
@@ -146,7 +146,7 @@ async def load_model():
             #################################################################################################################
             # LIBERO environment-specific parameters
             #################################################################################################################
-            # task_suite_name: str = "libero_10"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
+            # task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
             task_suite_name: str = "bridge_orig"         
             num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
             num_trials_per_task: int = 50                    # Number of rollouts per task

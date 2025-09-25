@@ -2,7 +2,7 @@
 #SBATCH --job-name=smolvla_training             # Name of your job
 #SBATCH --output=%x_%j.out            # Output file (%x for job name, %j for job ID)
 #SBATCH --error=%x_%j.err             # Error file
-#SBATCH --partition=A40              # Partition to submit to (A100, V100, etc.)
+#SBATCH --partition=H100              # Partition to submit to (A100, V100, etc.)
 #SBATCH --gres=gpu:1                 # Request 1 GPU
 #SBATCH --mem=32G                     # Request 32 GB of memory
 #SBATCH --time=24:00:00               # Time limit for the job (hh:mm:ss)
